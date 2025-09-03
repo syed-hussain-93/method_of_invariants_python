@@ -155,6 +155,8 @@ class BaseGroup(ABC):
         self.order = None
         self.number_of_irreps = None
         self.faithful_representation = None
+        self.irrep_names = None
+        self.irreps_with_names = None
 
     @abstractmethod
     def _generate_elements(self) -> list:
@@ -209,9 +211,11 @@ class BaseGroup(ABC):
 
     @staticmethod
     def _generate_additional_elements(element_multiply: str, group_elements: list):
-        additional_group_elements = group_elements.copy()
+        additional_group_elements: list[str] = group_elements.copy()
         for elem in group_elements:
-            additional_group_elements.append(element_multiply + elem)
+            additional_group_elements.append(element_multiply + '*' + elem)
+
+        additional_group_elements = [elem.replace('*E', '').replace('E*', '') for elem in additional_group_elements]
         return additional_group_elements
 
     def projection_operator(self, i, j, irrep: list[sp.ImmutableMatrix], transformation: list):
@@ -232,11 +236,25 @@ class BaseGroup(ABC):
                     return False
         return True
 
+    def check_representation_equality(self, rep_1, rep_2):
+        check = []
+        for gi, gj in zip(rep_1, rep_2):
+            if not isinstance(gi, sp.MatrixBase):
+                gi = sp.Matrix([[gi]])
+            if not isinstance(gj, sp.MatrixBase):
+                gj = sp.Matrix([[gj]])
+            if not gi.equals(gj):
+                check.append(False)
+            else:
+                check.append(True)
+
+        return check
+
 
 class GroupC1(BaseGroup):
 
     def __init__(self, is_double_group: bool = False):
-        super().__init__(is_double_group=is_double_group)
+        super().__init__(name='C1', is_double_group=is_double_group)
         self.get_elements()
         self.get_irreducible_representations()
         self.get_characters()
@@ -268,7 +286,7 @@ class GroupC1(BaseGroup):
 class GroupCi(BaseGroup):
 
     def __init__(self, is_double_group: bool = False):
-        super().__init__(is_double_group=is_double_group)
+        super().__init__(name='Ci', is_double_group=is_double_group)
         self.get_elements()
         self.get_irreducible_representations()
         self.get_characters()
@@ -297,8 +315,7 @@ class GroupCi(BaseGroup):
 class GroupC2Cs(BaseGroup):
 
     def __init__(self, name: str, is_double_group: bool = False):
-        super().__init__(is_double_group=is_double_group)
-        self.name = name
+        super().__init__(name=name, is_double_group=is_double_group)
         self.get_elements()
         self.get_irreducible_representations()
         self.get_characters()
@@ -343,9 +360,8 @@ class GroupD3C3v(BaseGroup):
     """
 
     def __init__(self, name: str, is_double_group: bool = False):
-        super().__init__(is_double_group=is_double_group)
+        super().__init__(name=name, is_double_group=is_double_group)
 
-        self.name = name
         self.get_elements()
         self.get_irreducible_representations()
         self.get_characters()
@@ -443,9 +459,8 @@ class GroupD6C6vD3h(BaseGroup):
     """
 
     def __init__(self, name: str, is_double_group: bool = False):
-        super().__init__(is_double_group=is_double_group)
+        super().__init__(name=name, is_double_group=is_double_group)
 
-        self.name = name
         self.get_elements()
         self.get_irreducible_representations()
         self.get_characters()
@@ -509,9 +524,12 @@ class GroupD6C6vD3h(BaseGroup):
             g5,
             g6
         ]
+        self.irrep_names = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6']
         if self.is_double_group:
             irreps = self.get_double_group_irreps(irreps)
+            self.irrep_names += ['g7', 'g8', 'g9']
 
+        self.irreps_with_names = {k: v for k, v in zip(self.irrep_names, irreps)}
         return irreps
 
     @staticmethod
@@ -565,20 +583,19 @@ class GroupD6C6vD3h(BaseGroup):
         faithful_rep = None
 
         if self.is_double_group:
-
             if self.name == 'D6':
-                faithful_rep = direct_sum(self.irreducible_representations[6], self.irreducible_representations[1])
+                faithful_rep = direct_sum(self.irreps_with_names['g7'], self.irreps_with_names['g2'])
             elif self.name == 'C6v':
-                faithful_rep = direct_sum(self.irreducible_representations[6], self.irreducible_representations[0])
+                faithful_rep = direct_sum(self.irreps_with_names['g7'], self.irreps_with_names['g1'])
             elif self.name == 'D3h':
-                faithful_rep = direct_sum(self.irreducible_representations[6], self.irreducible_representations[3])
+                faithful_rep = direct_sum(self.irreps_with_names['g7'], self.irreps_with_names['g4'])
         else:
             if self.name == 'D6':
-                faithful_rep = direct_sum(self.irreducible_representations[4], self.irreducible_representations[1])
+                faithful_rep = direct_sum(self.irreps_with_names['g5'], self.irreps_with_names['g2'])
             elif self.name == 'C6v':
-                faithful_rep = direct_sum(self.irreducible_representations[4], self.irreducible_representations[0])
+                faithful_rep = direct_sum(self.irreps_with_names['g5'], self.irreps_with_names['g1'])
             elif self.name == 'D3h':
-                faithful_rep = direct_sum(self.irreducible_representations[4], self.irreducible_representations[3])
+                faithful_rep = direct_sum(self.irreps_with_names['g5'], self.irreps_with_names['g4'])
 
         if not self.is_faithful(faithful_rep):
             raise ValueError('Faithful representation defined incorrectly')
@@ -589,38 +606,46 @@ class GroupD6C6vD3h(BaseGroup):
 class GroupD6h(BaseGroup):
 
     def __init__(self, name: str | None = None, is_double_group: bool = False):
-        super().__init__(is_double_group=is_double_group)
+        super().__init__(name=name, is_double_group=is_double_group)
 
         self.is_double_group = is_double_group
         self.d6 = GroupD6C6vD3h(name='D6', is_double_group=self.is_double_group)
         self.ci = GroupCi()
 
-        self.name = name
         self.get_elements()
         self.get_irreducible_representations()
         self.get_characters()
         self.get_faithful_representation()
 
     def _generate_elements(self) -> list:
-        elements = [''.join(pr) for pr in itertools.product(self.ci.elements, self.d6.elements)]
+        elements = ['*'.join(pr).replace('*E', '').replace('E*', '') for pr in
+                    itertools.product(self.ci.elements, self.d6.elements)]
         return elements
 
     def _generate_irreducible_representations(self) -> list:
 
+        irrep_names = []
         additional = []
         for ci_ir in self.ci.irreducible_representations:
-            for d6_ir in self.d6.irreducible_representations:
+            for d6_ir_name, d6_ir in zip(self.d6.irrep_names, self.d6.irreducible_representations):
                 additional_elements_in_ir = []
                 for g_ci in ci_ir:
                     additional_elements_in_ir += [g_ci * g_d6 for g_d6 in d6_ir]
                 additional.append(additional_elements_in_ir)
+                if -1 in ci_ir:
+                    irrep_names += [d6_ir_name + 'm']
+                else:
+                    irrep_names += [d6_ir_name + 'p']
+        self.irrep_names = irrep_names
+        self.irreps_with_names = {k: v for k, v in zip(self.irrep_names, additional)}
+
         return additional
 
     def _generate_faithful_representation(self):
         if self.is_double_group:
-            faithful_rep = direct_sum(self.irreducible_representations[6], self.irreducible_representations[10])
+            faithful_rep = direct_sum(self.irreps_with_names['g7p'], self.irreps_with_names['g2m'])
         else:
-            faithful_rep = direct_sum(self.irreducible_representations[11], self.irreducible_representations[9])
+            faithful_rep = direct_sum(self.irreps_with_names['g5m'], self.irreps_with_names['g2m'])
 
         if not self.is_faithful(faithful_rep):
             raise ValueError('Faithful representation defined incorrectly')
