@@ -72,7 +72,7 @@ def direct_sum(*reps):
 
 
 def character_of_representation(representation: list) -> list:
-    return [sp.Trace(g).simplify() if isinstance(g, sp.MatrixBase) else g for g in representation]
+    return [sp.Trace(g).expand(complex=True).simplify() if isinstance(g, sp.MatrixBase) else g for g in representation]
 
 
 def irrep_decomposition(representation: list, irreducible_representations: dict):
@@ -84,6 +84,25 @@ def irrep_decomposition(representation: list, irreducible_representations: dict)
         if decomp != 0:
             ir_vec[ir_name] = decomp
     return ir_vec
+
+
+def convert_rep_to_matrix_type(rep):
+    rep = [R if isinstance(R, sp.MatrixBase) else sp.Matrix([R]) for R in rep]
+    return rep
+
+
+def projection_operator(irrep: list, representation: list, i: int, j: int):
+    irrep = convert_rep_to_matrix_type(irrep)
+    d_mu = irrep[0].shape[0]
+    d_G = len(irrep)
+
+    if d_mu == 1:
+        terms = [sp.conjugate(irrep[R])[0] * representation[R] for R in range(d_G)]
+        # P = sp.Rational(d_mu, d_G) * sum(terms, sp.Matrix.zeros(*representation[0].shape))
+    else:
+        terms = [sp.conjugate(irrep[R][i, j]) * representation[R] for R in range(d_G)]
+    P = sp.Rational(d_mu, d_G) * sum(terms, sp.Matrix.zeros(*representation[0].shape)).expand(complex=True)
+    return P
 
 
 def is_faithful(rep: list[sp.MatrixBase]):
