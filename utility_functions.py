@@ -27,15 +27,46 @@ def create_reflection_matrix(theta):
     return r
 
 
+def rotation_matrix_3D(axis, theta):
+    """
+    Create a 3D rotation matrix for rotation about an arbitrary axis.
+
+    Parameters
+    ----------
+    axis : list or tuple of length 3
+        Axis of rotation [x, y, z].
+    theta : sympy expression or symbol
+        Rotation angle.
+
+    Returns
+    -------
+    sp.Matrix
+        3x3 rotation matrix.
+    """
+    # Ensure axis is sympy Matrix
+    axis = sp.Matrix(axis).normalized()
+    x, y, z = axis
+
+    cos_t = sp.cos(theta)
+    sin_t = sp.sin(theta)
+    one_minus_cos = 1 - cos_t
+
+    R = sp.Matrix([
+        [cos_t + x ** 2 * one_minus_cos, x * y * one_minus_cos - z * sin_t, x * z * one_minus_cos + y * sin_t],
+        [y * x * one_minus_cos + z * sin_t, cos_t + y ** 2 * one_minus_cos, y * z * one_minus_cos - x * sin_t],
+        [z * x * one_minus_cos - y * sin_t, z * y * one_minus_cos + x * sin_t, cos_t + z ** 2 * one_minus_cos]
+    ])
+    return sp.simplify(R)
+
+
 def tensor(*reps):
     """
     Takes in multiple lists of representation matrices and returns
     a new list where each entry is the Kronecker product of the
     corresponding matrices from the input lists.
 
-    Example:
-    reps = [ [A1, A2, A3], [B1, B2, B3] ]
-    returns: [kron(A1, B1), kron(A2, B2), kron(A3, B3)]
+    If any element is 1D (scalar or 1x1 matrix), it is multiplied
+    instead of taking the Kronecker product.
     """
     # Ensure all reps are the same length
     n = len(reps[0])
@@ -44,8 +75,24 @@ def tensor(*reps):
 
     result = []
     for elem in zip(*reps):
-        elem: list = [e if isinstance(e, sp.MatrixBase) else sp.ImmutableMatrix([[e]]) for e in elem]
-        kron_product = reduce(sp.KroneckerProduct, elem).doit()
+        processed = []
+        scalar_factor = 1
+
+        for e in elem:
+            if isinstance(e, sp.MatrixBase):
+                if e.shape == (1, 1):  # treat 1x1 matrix as scalar
+                    scalar_factor *= e[0, 0]
+                else:
+                    processed.append(e)
+            else:
+                # plain scalar
+                scalar_factor = scalar_factor * sp.sympify(e)
+
+        if not processed:  # all were scalars
+            kron_product = scalar_factor
+        else:
+            kron_product = reduce(lambda a, b: sp.KroneckerProduct(a, b).doit(), processed)
+            kron_product = scalar_factor * kron_product
 
         result.append(kron_product)
 
