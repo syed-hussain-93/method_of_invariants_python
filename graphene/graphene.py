@@ -1,175 +1,69 @@
-import group
-from representation_matrices_explicit import GroupD6h, GroupD6D3hC6v, BaseGroup, GroupD2h
+from representation_matrices_explicit import (
+    GroupD6h, GroupD6D3hC6v, BaseGroup, GroupD2h, CosetReps, GroupOfK, Generators, SiteSymmetryGroup
+)
 import sympy as sp
-from dataclasses import dataclass
 from utility_functions import ismember, projection_operator, tensor
 import numpy as np
+from lattice import Hexagonal2DLattice
+
+from base_connectivity import BaseConnectivity
 
 
-class Lattice:
-    def __init__(self):
-        self._a = sp.Symbol('a', real=True, positive=True)
+class GrapheneHamiltonian(BaseConnectivity):
 
-        # Real-space lattice vectors
-        self._a1 = None
-        self._a2 = None
-        self._a3 = None
-
-        # Reciprocal lattice vectors
-        self._b1 = None
-        self._b2 = None
-        self._b3 = None
-
-    @property
-    def a(self):
-        return self._a
-
-    # ----- Real-space lattice vectors -----
-    @property
-    def a1(self):
-        if self._a1 is None:
-            self._a1 = self._get_a1()
-        return self._a1
-
-    @a1.setter
-    def a1(self, value):
-        self._a1 = value
-
-    @property
-    def a2(self):
-        if self._a2 is None:
-            self._a2 = self._get_a2()
-        return self._a2
-
-    @a2.setter
-    def a2(self, value):
-        self._a2 = value
-
-    @property
-    def a3(self):
-        if self._a3 is None:
-            self._a3 = self._get_a3()
-        return self._a3
-
-    @a3.setter
-    def a3(self, value):
-        self._a3 = value
-
-    # ----- Reciprocal lattice vectors -----
-    @property
-    def b1(self):
-        if self._b1 is None:
-            self._b1 = self._get_b1()
-        return self._b1
-
-    @property
-    def b2(self):
-        if self._b2 is None:
-            self._b2 = self._get_b2()
-        return self._b2
-
-    @property
-    def b3(self):
-        if self._b3 is None:
-            self._b3 = self._get_b3()
-        return self._b3
-
-    def _get_a1(self):
-        raise NotImplementedError("Define lattice vector a1")
-
-    def _get_a2(self):
-        raise NotImplementedError("Define lattice vector a2")
-
-    def _get_a3(self):
-        raise NotImplementedError("Define lattice vector a2")
-
-    def _get_b1(self):
-        return 2 * sp.pi * self.a2.cross(self.a3) / self._volume()
-
-    def _get_b2(self):
-        return 2 * sp.pi * self.a3.cross(self.a1) / self._volume()
-
-    def _get_b3(self):
-        return 2 * sp.pi * self.a1.cross(self.a2) / self._volume()
-
-    def _volume(self):
-        return self.a1.dot(self.a2.cross(self.a3))
-
-    def get_lattice_vector(self, n: list[int]):
-        """Compute lattice vector from real-space basis."""
-        if len(n) != 3:
-            raise ValueError("Expected a list of 3 integers")
-        return n[0] * self.a1 + n[1] * self.a2 + n[2] * self.a3
-
-    def get_reciprocal_vector(self, m: list[int]):
-        """Compute reciprocal lattice vector from (m1, m2, m3)."""
-        if len(m) != 3:
-            raise ValueError("Expected a list of 3 integers")
-        return m[0] * self.b1 + m[1] * self.b2 + m[2] * self.b3
-
-
-class Hexagonal2DLattice(Lattice):
-
-    def _get_a1(self):
-        a1 = (self.a * sp.sqrt(3) / 2) * (sp.Matrix([1, 0, 0]) - sp.sqrt(3) * sp.Matrix([0, 1, 0]))
-        return a1
-
-    def _get_a2(self):
-        a2 = (self.a * sp.sqrt(3) / 2) * (sp.Matrix([1, 0, 0]) + sp.sqrt(3) * sp.Matrix([0, 1, 0]))
-        return a2
-
-    def _get_a3(self):
-        return sp.Matrix([0, 0, 1])
-
-
-class CosetReps:
-    symbols: list[str]
-    full_group: BaseGroup
-
-    def __init__(self, symbols: list[str], full_group: BaseGroup):
-        self.symbols = symbols
-        self.full_group = full_group
-        self.indices = [self.full_group.elements.index(x) for x in self.symbols]
-        # [i for i, x in enumerate(full_group.elements) if x in self.symbols]
-        self.faithful_representation = [self.full_group.faithful_representation()[i] for i in self.indices]
-        self.xyz_representation = [self.full_group.xyz_representation()[i] for i in self.indices]
-
-
-class GroupOfK:
-
-    def __init__(self, name: str, point: sp.Matrix, group: BaseGroup):
-        self.name = name
-        self.group = group
-        self.point = point
-
-
-class GrapheneHamiltonian:
-
-    def __init__(self, with_spin):
+    def __init__(self, with_spin: bool):
+        super().__init__()
         self.with_spin = with_spin
         if self.with_spin:
-            is_double_group = True
+            self.is_double_group = True
         else:
-            is_double_group = False
+            self.is_double_group = False
 
-        self.group = GroupD6h(is_double_group=is_double_group)
+        self.group = GroupD6h(
+            generators=[
+                Generators(axis=(0, 0, 1), angle=2 * sp.pi / 6, name='C6'),
+                Generators(axis=(0, 1, 0), angle=2 * sp.pi / 2, name='C2'),
+                Generators(matrix=-sp.Matrix.eye(3), name='I')
+            ],
+            is_double_group=self.is_double_group
+        )
         self.lattice = Hexagonal2DLattice()
 
-        self.group_of_G = GroupOfK(name='G',
-                                   point=self.lattice.get_reciprocal_vector([0, 0, 0]),
-                                   group=GroupD6h(is_double_group=is_double_group))
-        self.group_of_K = GroupOfK(name='K',
-                                   point=self.lattice.get_reciprocal_vector([sp.Rational(1, 3), sp.Rational(1, 3), 0]),
-                                   group=GroupD6D3hC6v(name='d3h', is_double_group=is_double_group,
-                                                       edge_x_orientation=True))
-        self.group_of_M = GroupOfK(name='M',
-                                   point=self.lattice.get_reciprocal_vector([-sp.Rational(1, 2), sp.Rational(1, 2), 0]),
-                                   group=GroupD2h(is_double_group=is_double_group))
+        self.group_of_G = GroupOfK(
+            name='G',
+            point=self.lattice.get_reciprocal_vector([0, 0, 0]),
+            group=self.group
+        )
+        self.group_of_K = GroupOfK(
+            name='K',
+            point=self.lattice.get_reciprocal_vector([sp.Rational(1, 3), sp.Rational(1, 3), 0]),
+            group=GroupD6D3hC6v(
+                name='D3h',
+                generators=[
+                    Generators(axis=(0, 0, 1), angle=2 * sp.pi / 6, name='C6'),
+                    Generators(axis=(1, 0, 0), angle=2 * sp.pi / 2, name='C2')
+                ],
+                is_double_group=self.is_double_group
+            )
+        )
+        self.group_of_M = GroupOfK(
+            name='M',
+            point=self.lattice.get_reciprocal_vector([-sp.Rational(1, 2), sp.Rational(1, 2), 0]),
+            group=GroupD2h(
+                generators=[
+                    Generators(axis=(0, 0, 1), angle=2 * sp.pi / 2, name='C2'),
+                    Generators(axis=(0, 1, 0), angle=2 * sp.pi / 2, name='C2'),
+                    Generators(matrix=-sp.Matrix.eye(3), name='I')
+                ],
+                is_double_group=self.is_double_group
+            )
+        )
 
         # self._site_symmetry_group = None
         self.site_symmetry_group = None
         self.coset_reps_dict = None
         self.tau_vectors = None
+        self.coset_reps_ssg = None
 
     # @property
     # def site_symmetry_group(self):
@@ -181,81 +75,31 @@ class GrapheneHamiltonian:
 
     def run_setup(self, wyckoff_position: str):
         if wyckoff_position == '2b':
-            self.site_symmetry_group = GroupD6D3hC6v(name='d3h',
-                                                     is_double_group=self.with_spin,
-                                                     edge_x_orientation=False)
 
-            self.coset_reps_ssg = CosetReps(symbols=['E', 'I'], full_group=self.group)
+            site_symmetry_group = GroupD6D3hC6v(
+                name='D3h',
+                generators=[
+                    Generators(axis=(0, 0, 1), angle=2 * sp.pi / 6, name='C6'),
+                    Generators(axis=(0, 1, 0), angle=2 * sp.pi / 2, name='C2')
+                ],
+                is_double_group=self.is_double_group
+            )
 
-            self.tau_vectors = {
+            coset_reps_ssg = CosetReps(symbols=['E', 'I'], full_group=self.group)
+
+            tau_vectors = {
                 0: sp.Rational(1, 3) * self.lattice.a1 + sp.Rational(2, 3) * self.lattice.a2,
                 1: sp.Rational(2, 3) * self.lattice.a1 + sp.Rational(1, 3) * self.lattice.a2
             }
+            self.site_symmetry_group = SiteSymmetryGroup(
+                wyckoff_position=wyckoff_position,
+                group=site_symmetry_group,
+                coset_reps=coset_reps_ssg,
+                tau_vectors=tau_vectors
+            )
 
         else:
             raise ValueError('No setup for this wyckoff posistion')
-
-    def subgroup_indices_in_full_group(self, subgroup: BaseGroup):
-        full_group = self.group
-        full_group_faithful_rep = full_group.faithful_representation()
-        sub_group_faithful_rep = subgroup.faithful_representation()
-
-        sub_group_index_in_full_group = [full_group_faithful_rep.index(x) for x in sub_group_faithful_rep]
-
-        return sub_group_index_in_full_group
-
-    def group_to_subgroup_mapping(self, subgroup: BaseGroup, coset_reps: CosetReps,
-                                  from_subgroup: BaseGroup | None = None, extended_form: bool = False):
-        """
-        RRcol = RrowRh where R in group and Rh in subgroup Rrow, Rcol are coset reps
-        by default R is in Full group if from_subgroup_indices is specified then R is restricted to be in subgroup
-        defined by from_subgroup_indices of full group
-
-        :param extended_form: show full mapping form. R_row | R_col | idx_from | idx_to
-        :param from_subgroup:
-        :param subgroup:
-        :param coset_reps:
-        :return:
-        """
-
-        full_group = self.group
-        full_group_faithful_rep = full_group.faithful_representation()
-
-        sub_group_index_in_full_group = self.subgroup_indices_in_full_group(subgroup)
-        sub_group_in_full_group = [full_group_faithful_rep[i] for i in sub_group_index_in_full_group]
-
-        if from_subgroup:
-            from_subgroup_indices = self.subgroup_indices_in_full_group(from_subgroup)
-            from_group_faithful_rep = [full_group_faithful_rep[i] for i in from_subgroup_indices]
-        else:
-            from_group_faithful_rep = full_group_faithful_rep.copy()
-            from_subgroup_indices = self.subgroup_indices_in_full_group(self.group)
-        # sub_group_faithful_rep = subgroup.faithful_representation()
-
-        coset_reps_f = coset_reps.faithful_representation
-
-        left_coset_sub_group = [[full_group_faithful_rep.index(R_row * R_sg) for R_sg in sub_group_in_full_group] for
-                                R_row in coset_reps_f]
-
-        right_coset_full_group = [[full_group_faithful_rep.index(R * R_col) for R in from_group_faithful_rep] for R_col
-                                  in coset_reps_f]
-
-        coset_pairs_mapping, _ = ismember(right_coset_full_group, left_coset_sub_group)
-        element_mapping = []
-        for cp_i, rc_i in zip(coset_pairs_mapping, right_coset_full_group):
-            el_map = [
-                full_group_faithful_rep.index(coset_reps_f[ci].inv() * full_group_faithful_rep[RRcol]) for ci, RRcol in
-                zip(cp_i, rc_i)
-            ]
-            element_mapping.append(el_map)
-
-        if extended_form:
-            mappings = [[(c_row, c_col, e0, e) for c_col, e0, e in
-                         zip(cmi, from_subgroup_indices, emi)] for
-                        c_row, (cmi, emi) in enumerate(zip(coset_pairs_mapping, element_mapping))]
-            return np.array(mappings).reshape(-1, np.array(mappings).shape[-1])
-
-        return coset_pairs_mapping, np.array(element_mapping)
 
     def generate_shell_vectors(self, shell_number: int, t_bra: int, t_ket: int):
         """
@@ -264,7 +108,7 @@ class GrapheneHamiltonian:
         pass as integer which corresponds to the coset rep wrt ssg
         """
 
-        xyz_full_group = self.group.xyz_representation()
+        xyz_full_group = self.group.get_xyz_representation()
 
         def unique_matrices(mats):
             # convert each Matrix to a tuple of its entries
@@ -317,7 +161,7 @@ class GrapheneHamiltonian:
         else:
             raise NotImplementedError('shell not implemented')
 
-        xyz_full_group = self.group.xyz_representation()
+        xyz_full_group = self.group.get_xyz_representation()
 
         shell_vectors = self.generate_shell_vectors(shell_number, t_bra, t_ket)
         permutations = np.array(
@@ -356,18 +200,6 @@ class GrapheneHamiltonian:
 
         return projection_T
 
-    # --- helpers to get/set blocks ---
-
-    def get_block(M, i, j, block_size):
-        a = block_size
-        return M[i * a:(i + 1) * a, j * a:(j + 1) * a]
-
-    def set_block(self, M, i, j, block, block_size):
-        a = block_size
-        if block.shape != (a, a):
-            raise ValueError(f"block must be {a}x{a}, got {block.shape}")
-        M[i * a:(i + 1) * a, j * a:(j + 1) * a] = block
-
     def generate_site_orbital_representation(self, orbital_irrep_name: str):
         """
         orbital irrep name in full group
@@ -379,7 +211,7 @@ class GrapheneHamiltonian:
         ssg_coset_mapping, ssg_element_mapping = self.group_to_subgroup_mapping(self.site_symmetry_group,
                                                                                 coset_reps=self.coset_reps_ssg)
 
-        d_G = len(self.group.faithful_representation())
+        d_G = len(self.group.faithful_representation)
         m_tau = len(self.coset_reps_ssg.symbols)  # ssg_coset_mapping.shape[0],
         orbital_irrep = self.group.irreducible_representations[orbital_irrep_name]
         d_mu = orbital_irrep[0].shape[0] if isinstance(orbital_irrep[0], sp.MatrixBase) else 1
@@ -389,6 +221,42 @@ class GrapheneHamiltonian:
         site_orbital_rep = []
         for R in range(d_G):
             H = sp.MutableDenseMatrix.zeros(d_H, d_H)
+            for t_bra in range(m_tau):
+                t_ket = ssg_coset_mapping[t_bra, R]
+                element_in_ssg = ssg_element_mapping[t_bra, R]
+                orbital_rep = orbital_irrep[element_in_ssg]
+                orbital_rep = orbital_rep if isinstance(orbital_rep, sp.MatrixBase) else sp.Matrix([orbital_rep])
+
+                self.set_block(H, t_bra, t_ket, orbital_rep, orbital_rep.shape[0])
+
+            site_orbital_rep.append(H)
+
+        return site_orbital_rep
+
+    def generate_site_orbital_representation_2(self, orbital_irrep_name: str):
+        """
+        orbital irrep name in full group
+
+        :param orbital_irrep_name:
+        :return:
+        """
+        ssg_mapping = self.group_to_subgroup_mapping(self.site_symmetry_group, coset_reps=self.coset_reps_ssg)
+
+        ssg_coset_mapping, ssg_element_mapping = self.group_to_subgroup_mapping(self.site_symmetry_group,
+                                                                                coset_reps=self.coset_reps_ssg)
+
+        d_G = len(ssg_mapping)
+        # d_G = len(self.group.faithful_representation)
+        m_tau = len(self.coset_reps_ssg.symbols)  # ssg_coset_mapping.shape[0],
+        orbital_irrep = self.group.irreducible_representations[orbital_irrep_name]
+        d_mu = orbital_irrep[0].shape[0] if isinstance(orbital_irrep[0], sp.MatrixBase) else 1
+
+        d_H = m_tau * d_mu
+
+        site_orbital_rep = []
+        for R in range(d_G):
+            H = sp.MutableDenseMatrix.zeros(d_H, d_H)
+
             for t_bra in range(m_tau):
                 t_ket = ssg_coset_mapping[t_bra, R]
                 element_in_ssg = ssg_element_mapping[t_bra, R]
@@ -448,20 +316,10 @@ class GrapheneHamiltonian:
         return self._construct_projection_operator(shell_number, bra_orbital_irrep_name, ket_orbital_irrep_name,
                                                    location_trial)
 
-    def generate_band_representation(self, orbital_irrep_name: str, k_point_name: str, zak_basis: bool = True):
-
-        k_point_name = k_point_name.upper()
-        if k_point_name == self.group_of_K.name:
-            group_of_k = self.group_of_K
-        elif k_point_name == self.group_of_M.name:
-            group_of_k = self.group_of_M
-        elif k_point_name == self.group_of_G.name:
-            group_of_k = self.group_of_G
-        else:
-            raise NotImplementedError(f'{k_point_name} not recognised')
+    def generate_band_representation(self, orbital_irrep_name: str, group_of_k: GroupOfK, zak_basis: bool = True):
 
         def calculate_phase(R, t_bra_idx):
-            gR = np.array(self.group.xyz_representation())[self.subgroup_indices_in_full_group(group_of_k.group)][
+            gR = np.array(self.group.get_xyz_representation())[self.subgroup_indices_in_full_group(group_of_k.group)][
                      R] * group_of_k.point - group_of_k.point
             tau_bra = self.tau_vectors[t_bra_idx]
             phase = sp.exp(sp.I * (gR.dot(tau_bra)))
@@ -505,20 +363,66 @@ class GrapheneHamiltonian:
 
         return site_orbital_rep
 
-    def subgroup_to_elements_mapping_in_full_group(self, subgroup: BaseGroup):
-        indices = self.subgroup_indices_in_full_group(subgroup)
-        elements = np.array(self.group.elements)[indices]
-        return list(elements)
+    def generate_band_representation_2(self, orbital_irrep_name: str, group_of_k: GroupOfK, zak_basis: bool = True):
 
-    def subgroup_to_faithful_rep_mapping_in_full_group(self, subgroup: BaseGroup):
-        indices = self.subgroup_indices_in_full_group(subgroup)
-        ff = [self.group.faithful_representation()[i] for i in indices]
-        return ff
+        group_of_k_idx_in_full_group = self.subgroup_indices_in_full_group(group_of_k.group)
+
+        def calculate_phase(R, t_bra_idx):
+            gR = np.array(self.group.get_xyz_representation())[group_of_k_idx_in_full_group][
+                     R] * group_of_k.point - group_of_k.point
+            tau_bra = self.tau_vectors[t_bra_idx]
+            phase = sp.exp(sp.I * (gR.dot(tau_bra)))
+            return phase
+
+        def calculate_zak_phase(k_point, tau_bra_idx, tau_ket_idx):
+            tau_ket = self.tau_vectors[tau_ket_idx]
+            tau_bra = self.tau_vectors[tau_bra_idx]
+            phase = sp.exp(sp.I * (k_point.dot(tau_bra - tau_ket)))
+            return phase
+
+        ssg_coset_mapping = self.group_to_subgroup_mapping_3(self.site_symmetry_group,
+                                                             coset_reps_ssg=self.coset_reps_ssg,
+                                                             from_subgroup=group_of_k.group)
+
+        d_G = len(ssg_coset_mapping)
+        m_tau = len(self.coset_reps_ssg.symbols)  # ssg_coset_mapping.shape[0],
+        orbital_irrep = self.group.irreducible_representations[orbital_irrep_name]
+        d_mu = orbital_irrep[0].shape[0] if isinstance(orbital_irrep[0], sp.MatrixBase) or isinstance(orbital_irrep[0],
+                                                                                                      np.ndarray) else 1
+
+        d_H = m_tau * d_mu
+
+        site_orbital_rep = []
+        for Rk, Rk_mapped in ssg_coset_mapping.items():
+            H = sp.MutableDenseMatrix.zeros(d_H, d_H)
+            for t_bra, t_ket, Rt in Rk_mapped:
+                orbital_rep = orbital_irrep[Rt] * calculate_phase(Rk, t_bra)
+                if zak_basis:
+                    zak_phase = calculate_zak_phase(group_of_k.point, tau_bra_idx=t_bra, tau_ket_idx=t_ket)
+                    orbital_rep *= zak_phase
+                orbital_rep = orbital_rep if isinstance(orbital_rep, sp.MatrixBase) else sp.Matrix([orbital_rep])
+                self.set_block(H, t_bra, t_ket, orbital_rep, orbital_rep.shape[0])
+
+            site_orbital_rep.append(H)
+
+        return site_orbital_rep
+
+    def projection_operator_k_point(self, group_k: GroupOfK, band_rep: list,
+                                    irrep_in_decomp_name: str):
+
+        mu = group_k.group.irreducible_representations[irrep_in_decomp_name]
+        d_mu = mu[0].shape[0] if isinstance(mu[0], sp.MatrixBase) or isinstance(mu[0], np.ndarray) else 1
+        results = {}
+        for i in range(d_mu):
+            for j in range(d_mu):
+                results[i, j] = projection_operator(mu, band_rep, i, j)
+
+        return results
 
 
 if __name__ == '__main__':
     graphene = GrapheneHamiltonian(with_spin=True)
     graphene.run_setup(wyckoff_position='2b')
     # graphene.group_to_subgroup_mapping(graphene.site_symmetry_group, graphene.coset_reps_ssg)
-    graphene.generate_band_representation('g8p', 'G')
+    graphene.generate_band_representation_2('g2m', graphene.group_of_G)
     print('run finished')
